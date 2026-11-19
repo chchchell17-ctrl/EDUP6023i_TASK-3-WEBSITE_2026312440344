@@ -1,0 +1,230 @@
+import React, { useEffect, useState } from 'react';
+import { Volume2, VolumeX } from 'lucide-react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { fetchCurrentSession, loginStudent, logoutSession } from '../../services/authApi.ts';
+import type { AuthenticatedSession, PortalType } from '../../types/auth.ts';
+import type { BuildingId } from '../../types/game.ts';
+import {
+  isSoundEnabled,
+  playBackClick,
+  playHoverTick,
+  playLoginSuccess,
+  setSoundEnabled,
+} from '../../utils/soundEffects.ts';
+import { Screen02Experience } from '../game/Screen02Experience.tsx';
+import { ParentDashboard } from '../portals/ParentDashboard.tsx';
+import { TeacherDashboard } from '../portals/TeacherDashboard.tsx';
+import { LoginBackground } from './LoginBackground.tsx';
+import { LoginFooter } from './LoginFooter.tsx';
+import { LoginHeader } from './LoginHeader.tsx';
+import { ParentLoginPanel } from './ParentLoginPanel.tsx';
+import { PortalSelection } from './PortalSelection.tsx';
+import { PusheenMascot } from './PusheenMascot.tsx';
+import { StudentLoginPanel } from './StudentLoginPanel.tsx';
+import { TeacherLoginPanel } from './TeacherLoginPanel.tsx';
+
+export const LoginScreen: React.FC = () => {
+  const [activePortal, setActivePortal] = useState<PortalType | null>(null);
+  const [session, setSession] = useState<AuthenticatedSession | null>(null);
+  const [soundOn, setSoundOn] = useState<boolean>(() => isSoundEnabled());
+  const [quickStartBusy, setQuickStartBusy] = useState(false);
+  const [teacherTownPlay, setTeacherTownPlay] = useState<{
+    unlockAll: boolean;
+    targetLocation?: BuildingId;
+  } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchCurrentSession().then((existingSession) => {
+      if (mounted && existingSession) {
+        setSession(existingSession);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleBackToPortals = () => {
+    setActivePortal(null);
+  };
+
+  const handleAuthSuccess = (newSession: AuthenticatedSession) => {
+    setSession(newSession);
+    setActivePortal(null);
+  };
+
+  const handleQuickStart = async () => {
+    if (quickStartBusy) return;
+    setQuickStartBusy(true);
+    const res = await loginStudent({
+      classCode: '5M',
+      studentId: 'DETECTIVE',
+      pin: '0000',
+    });
+    setQuickStartBusy(false);
+    if (res.ok) {
+      playLoginSuccess();
+      setSession(res.session);
+      setActivePortal(null);
+    }
+  };
+
+  const handleSignOut = async () => {
+    playBackClick();
+    await logoutSession();
+    setSession(null);
+    setActivePortal(null);
+    setTeacherTownPlay(null);
+  };
+
+  const handleToggleSound = () => {
+    const next = !soundOn;
+    setSoundEnabled(next);
+    setSoundOn(next);
+    if (next) {
+      playHoverTick();
+    }
+  };
+
+  if (session?.role === 'student') {
+    return (
+      <MotionConfig reducedMotion="user">
+        <Screen02Experience session={session} onSignOut={handleSignOut} />
+      </MotionConfig>
+    );
+  }
+
+  if (session?.role === 'teacher') {
+    if (teacherTownPlay) {
+      return (
+        <MotionConfig reducedMotion="user">
+          <Screen02Experience
+            teacherSession={session}
+            teacherUnlockAll={teacherTownPlay.unlockAll}
+            teacherInitialLocation={teacherTownPlay.targetLocation}
+            onReturnToTeacherPortal={() => setTeacherTownPlay(null)}
+            onSignOut={handleSignOut}
+          />
+        </MotionConfig>
+      );
+    }
+
+    return (
+      <MotionConfig reducedMotion="user">
+        <TeacherDashboard
+          session={session}
+          onSignOut={handleSignOut}
+          onPlayTown={(opts) =>
+            setTeacherTownPlay({
+              unlockAll: opts?.unlockAll ?? true,
+              targetLocation: opts?.targetLocation,
+            })
+          }
+        />
+      </MotionConfig>
+    );
+  }
+
+  if (session?.role === 'parent') {
+    return (
+      <MotionConfig reducedMotion="user">
+        <ParentDashboard session={session} onSignOut={handleSignOut} />
+      </MotionConfig>
+    );
+  }
+
+  const isOverlayActive = activePortal !== null;
+
+  return (
+    <MotionConfig reducedMotion="user">
+      <div className="relative min-h-dvh w-full overflow-x-hidden">
+        <LoginBackground isPanelOpen={isOverlayActive} />
+
+        {/* Sound Effects Toggle Control */}
+        <div className="fixed top-3 right-3 sm:top-4 sm:right-5 z-20">
+          <button
+            type="button"
+            onClick={handleToggleSound}
+            aria-label={soundOn ? 'Mute sound effects' : 'Enable sound effects'}
+            aria-pressed={soundOn}
+            className="min-h-[42px] rounded-full bg-white/80 hover:bg-white backdrop-blur-md border border-white/95 px-3.5 py-2 text-xs font-bold text-[#0369A1] shadow-[0_8px_20px_-6px_rgba(16,55,92,0.22)] transition-all duration-150 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-500/60 cursor-pointer inline-flex items-center gap-1.5"
+          >
+            {soundOn ? (
+              <Volume2 className="h-4 w-4 text-[#0284C7]" aria-hidden="true" />
+            ) : (
+              <VolumeX className="h-4 w-4 text-[#64748B]" aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">{soundOn ? 'Sound On' : 'Sound Off'}</span>
+          </button>
+        </div>
+
+        <div className="relative z-10 min-h-dvh w-full flex flex-col justify-between">
+          {/* Area A & B: Website Title, Tagline & Welcome Text */}
+          <LoginHeader />
+
+          {/* Area C: Three Portal Cards OR Active Login Panel */}
+          <main className="flex-1 flex items-center justify-center py-4 sm:py-6">
+            <AnimatePresence mode="wait">
+              {activePortal === null ? (
+                <motion.div
+                  key="portals"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full"
+                >
+                  <PortalSelection
+                    onSelectPortal={setActivePortal}
+                    onQuickStart={handleQuickStart}
+                    quickStartBusy={quickStartBusy}
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={activePortal}
+                  initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.97 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full px-4"
+                >
+                  {activePortal === 'student' && (
+                    <StudentLoginPanel
+                      onBack={handleBackToPortals}
+                      onSuccess={(s) => handleAuthSuccess(s)}
+                    />
+                  )}
+                  {activePortal === 'teacher' && (
+                    <TeacherLoginPanel
+                      onBack={handleBackToPortals}
+                      onSuccess={(s) => handleAuthSuccess(s)}
+                    />
+                  )}
+                  {activePortal === 'parent' && (
+                    <ParentLoginPanel
+                      onBack={handleBackToPortals}
+                      onSuccess={(s) => handleAuthSuccess(s)}
+                    />
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+
+          {/* Area D & E: Detective Pusheen Mascot + Footer (non-overlapping responsive bottom row) */}
+          <div className="w-full max-w-6xl mx-auto px-4 pb-3 sm:pb-4 flex flex-col lg:flex-row items-center lg:items-end justify-between gap-3">
+            <div className="order-2 lg:order-1">
+              <LoginFooter />
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <PusheenMascot compact={isOverlayActive} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </MotionConfig>
+  );
+};

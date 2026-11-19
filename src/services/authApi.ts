@@ -1,0 +1,261 @@
+import type {
+  AuthApiResponse,
+  AuthenticatedSession,
+  BackendStatus,
+  ParentOverviewResponse,
+  ParentSession,
+  PasswordResetResponse,
+  PortalType,
+  StudentSession,
+  TeacherOverviewResponse,
+  TeacherSession,
+} from '../types/auth.ts';
+import type {
+  CertificateRecord,
+  Lo2AssessmentStatus,
+  TeacherLo2Assessment,
+} from '../types/game.ts';
+
+async function parseJsonSafe<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchBackendStatus(): Promise<BackendStatus> {
+  try {
+    const res = await fetch('/api/auth/status', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    const data = await parseJsonSafe<{ configured?: boolean; missingEnv?: string[] }>(res);
+    return {
+      configured: Boolean(data?.configured),
+      missingEnv: Array.isArray(data?.missingEnv) ? data.missingEnv : [],
+    };
+  } catch {
+    return { configured: false, missingEnv: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'AUTH_SESSION_SECRET'] };
+  }
+}
+
+export async function fetchCurrentSession(): Promise<AuthenticatedSession | null> {
+  try {
+    const res = await fetch('/api/auth/session', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return null;
+    const data = await parseJsonSafe<{ session?: AuthenticatedSession | null }>(res);
+    return data?.session ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function loginStudent(payload: {
+  classCode: string;
+  studentId: string;
+  pin: string;
+}): Promise<AuthApiResponse<StudentSession>> {
+  try {
+    const res = await fetch('/api/auth/student-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonSafe<AuthApiResponse<StudentSession>>(res);
+    if (data) return data;
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: "Oops! We couldn't connect. Please check your internet connection and try again.",
+    };
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: "Oops! We couldn't connect. Please check your internet connection and try again.",
+    };
+  }
+}
+
+export async function loginTeacher(payload: {
+  identifier: string;
+  password: string;
+}): Promise<AuthApiResponse<TeacherSession>> {
+  try {
+    const res = await fetch('/api/auth/teacher-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonSafe<AuthApiResponse<TeacherSession>>(res);
+    if (data) return data;
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  }
+}
+
+export async function loginParent(payload: {
+  email: string;
+  password: string;
+}): Promise<AuthApiResponse<ParentSession>> {
+  try {
+    const res = await fetch('/api/auth/parent-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonSafe<AuthApiResponse<ParentSession>>(res);
+    if (data) return data;
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  }
+}
+
+export async function requestPasswordReset(payload: {
+  email: string;
+  portal: Extract<PortalType, 'teacher' | 'parent'>;
+}): Promise<PasswordResetResponse> {
+  try {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonSafe<PasswordResetResponse>(res);
+    if (data) return data;
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Unable to connect. Please check your internet connection.',
+    };
+  }
+}
+
+export async function fetchTeacherOverview(): Promise<TeacherOverviewResponse> {
+  try {
+    const res = await fetch('/api/portal/teacher/overview', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    const data = await parseJsonSafe<TeacherOverviewResponse>(res);
+    if (data && typeof data.ok === 'boolean') return data;
+    return {
+      ok: false,
+      source: 'preview',
+      students: [],
+      message: 'Unable to load classroom records.',
+    };
+  } catch {
+    return {
+      ok: false,
+      source: 'preview',
+      students: [],
+      message: 'Unable to connect to the classroom server.',
+    };
+  }
+}
+
+export async function fetchParentOverview(): Promise<ParentOverviewResponse> {
+  try {
+    const res = await fetch('/api/portal/parent/overview', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    const data = await parseJsonSafe<ParentOverviewResponse>(res);
+    if (data && typeof data.ok === 'boolean') return data;
+    return {
+      ok: false,
+      source: 'preview',
+      children: [],
+      message: 'Unable to load your child’s learning progress.',
+    };
+  } catch {
+    return {
+      ok: false,
+      source: 'preview',
+      children: [],
+      message: 'Unable to connect to the classroom server.',
+    };
+  }
+}
+
+export async function saveTeacherLo2Assessment(payload: {
+  studentId: string;
+  classCode: string;
+  studentCode: string;
+  status: Lo2AssessmentStatus;
+  comments: string;
+}): Promise<{
+  ok: boolean;
+  assessment?: TeacherLo2Assessment;
+  certificateRecord?: CertificateRecord;
+  message?: string;
+}> {
+  try {
+    const res = await fetch('/api/portal/teacher/lo2-assessment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonSafe<{
+      ok?: boolean;
+      assessment?: TeacherLo2Assessment;
+      certificateRecord?: CertificateRecord;
+      message?: string;
+    }>(res);
+    if (data?.ok && data.assessment) {
+      return {
+        ok: true,
+        assessment: data.assessment,
+        certificateRecord: data.certificateRecord,
+      };
+    }
+    return { ok: false, message: data?.message || 'Could not save LO2 assessment.' };
+  } catch {
+    return { ok: false, message: 'Unable to connect to the classroom server.' };
+  }
+}
+
+export async function logoutSession(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+  } catch {
+    // Ignore network failures on client logout cleanup
+  }
+}
