@@ -9,6 +9,15 @@ import {
 import { createWritingRouter } from '../server/writingEvalService.ts';
 
 const app = express();
+app.get('/api/debug', (req, res) => {
+  res.json({
+    ok: true,
+    originalUrl: req.originalUrl,
+    path: req.path,
+    baseUrl: req.baseUrl,
+    method: req.method
+  });
+});
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
